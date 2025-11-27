@@ -2,16 +2,16 @@ import { IsOptional, IsString } from 'class-validator';
 
 export class TwilioWebhookDto {
   @IsString()
-  CallSid: string;
+  CallSid!: string;
 
   @IsString()
-  From: string;
+  From!: string;
 
   @IsString()
-  To: string;
+  To!: string;
 
   @IsString()
-  CallStatus: string;
+  CallStatus!: string;
 
   @IsOptional()
   @IsString()

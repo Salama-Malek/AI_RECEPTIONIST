@@ -3,7 +3,7 @@ import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class SendNotificationDto {
   @IsEnum(NotificationChannel)
-  channel: NotificationChannel;
+  channel!: NotificationChannel;
 
   @IsOptional()
   @IsString()
@@ -14,5 +14,5 @@ export class SendNotificationDto {
   subject?: string;
 
   @IsString()
-  message: string;
+  message!: string;
 }

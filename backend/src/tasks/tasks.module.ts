@@ -7,5 +7,6 @@ import { CallsModule } from '../calls/calls.module';
   imports: [CallsModule],
   controllers: [TasksController],
   providers: [TasksService],
+  exports: [TasksService],
 })
 export class TasksModule {}

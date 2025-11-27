@@ -7,6 +7,7 @@ import { CallsModule } from './calls/calls.module';
 import { TelephonyModule } from './telephony/telephony.module';
 import { TasksModule } from './tasks/tasks.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ConversationModule } from './conversation/conversation.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     TelephonyModule,
     TasksModule,
     NotificationsModule,
+    ConversationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

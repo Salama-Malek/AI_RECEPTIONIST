@@ -25,7 +25,7 @@ class TelnyxPayloadDto {
 
 class TelnyxDataDto {
   @IsString()
-  event_type: string;
+  event_type!: string;
 
   @IsOptional()
   @ValidateNested()
@@ -36,7 +36,7 @@ class TelnyxDataDto {
 export class TelnyxWebhookDto {
   @ValidateNested()
   @Type(() => TelnyxDataDto)
-  data: TelnyxDataDto;
+  data!: TelnyxDataDto;
 
   @IsOptional()
   @IsObject()
