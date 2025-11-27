@@ -3,19 +3,19 @@ import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateCallDto {
   @IsString()
-  fromNumber: string;
+  fromNumber!: string;
 
   @IsString()
-  toNumber: string;
+  toNumber!: string;
 
   @IsString()
-  provider: string;
+  provider!: string;
 
   @IsEnum(CallDirection)
-  direction: CallDirection;
+  direction!: CallDirection;
 
   @IsEnum(CallStatus)
-  status: CallStatus;
+  status!: CallStatus;
 
   @IsOptional()
   @IsString()

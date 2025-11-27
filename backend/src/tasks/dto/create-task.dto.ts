@@ -7,7 +7,7 @@ export class CreateTaskDto {
   callId?: string;
 
   @IsString()
-  name: string;
+  name!: string;
 
   @IsOptional()
   @IsEnum(TaskStatus)
