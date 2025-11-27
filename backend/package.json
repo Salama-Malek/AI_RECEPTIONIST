@@ -30,6 +30,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.12.12",
+    "@types/nodemailer": "^6.4.15",
+    "@types/node-telegram-bot-api": "^0.64.10",
     "eslint": "^8.57.0",
     "prettier": "^3.3.3",
     "prisma": "^5.18.0",

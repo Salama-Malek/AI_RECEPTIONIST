@@ -30,9 +30,9 @@ npm start
 ```
 
 ## Useful Scripts
-- `npm run prisma:migrate` — apply migrations in production.
-- `npm run prisma:generate` — regenerate Prisma client after schema changes.
-- `npm run format` — format source files.
+- `npm run prisma:migrate` - apply migrations in production.
+- `npm run prisma:generate` - regenerate Prisma client after schema changes.
+- `npm run format` - format source files.
 
 ## Module Overview
 - **calls**: CRUD for call logs.
@@ -40,10 +40,51 @@ npm start
 - **tasks**: Stores function-calling/task results tied to calls.
 - **notifications**: Sends Telegram or Email notifications.
 - **database**: Prisma module with shared `PrismaService`.
+- **conversation**: AI receptionist brain (text-only endpoint for debugging the call flow).
 
 ## Webhook Endpoints (default port 3000)
-- `POST /telephony/twilio/webhook` — Twilio voice webhook (expects JSON).
-- `POST /telephony/telnyx/webhook` — Telnyx voice webhook (expects JSON).
+- `POST /telephony/twilio/webhook` - Twilio voice webhook (expects JSON).
+- `POST /telephony/telnyx/webhook` - Telnyx voice webhook (expects JSON).
+
+## Conversation API (text-mode debugging)
+These endpoints let the gateway or frontend exercise the AI receptionist without audio.
+
+- `POST /conversation/start`
+  - Body:
+    ```json
+    {
+      "callerName": "Amira Hassan",
+      "phoneNumber": "+971501234567",
+      "languageHint": "auto",
+      "context": "VIP caller, prefers mornings"
+    }
+    ```
+  - Response:
+    ```json
+    {
+      "conversationId": "uuid",
+      "initialAssistantMessage": "Hello, this is Salama AI Receptionist...",
+      "meta": { "languageHint": "auto", "timestamp": "2025-01-01T12:00:00.000Z" }
+    }
+    ```
+
+- `POST /conversation/message`
+  - Body:
+    ```json
+    {
+      "conversationId": "uuid",
+      "from": "caller",
+      "text": "I need to schedule an appointment tomorrow"
+    }
+    ```
+  - Response:
+    ```json
+    {
+      "reply": "Thanks, I can help. How urgent is it and what time works?",
+      "actions": [{ "type": "create_task", "payload": { "notes": "Scheduling intent" } }],
+      "updatedSummary": "Scheduling intent"
+    }
+    ```
 
 ## Notes
 - Provide your public URL to Twilio/Telnyx (e.g., via ngrok) and set it as the voice webhook.
