@@ -9,6 +9,7 @@ const schema = z.object({
   STT_MODEL: z.string().default('whisper-1'),
   TTS_VOICE: z.string().default('alloy'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  TWILIO_EXPECTED_ORIGIN: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

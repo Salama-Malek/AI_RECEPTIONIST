@@ -4,7 +4,7 @@ import { TTSClient } from './ttsClient';
 import { logger } from '../utils/logger';
 
 type Session = {
-  callId: string;
+  id: string;
   language: string;
   history: ConversationTurn[];
   queue: Promise<void>;
@@ -34,38 +34,38 @@ export class AudioPipeline {
     this.ttsClient = deps?.ttsClient ?? new TTSClient();
   }
 
-  async initSession(callId: string, languageHint: string = 'auto') {
-    const existing = this.sessions.get(callId);
-    if (existing) {
-      existing.language = languageHint;
-      return existing;
-    }
+  async createSession(sessionId: string, options?: { languageHint?: string }) {
+    const existing = this.sessions.get(sessionId);
+    if (existing) return existing;
     const session: Session = {
-      callId,
-      language: languageHint,
+      id: sessionId,
+      language: options?.languageHint || 'auto',
       history: [],
       queue: Promise.resolve(),
       active: true,
     };
-    this.sessions.set(callId, session);
-    logger.info({ callId, languageHint }, 'Audio session initialized');
+    this.sessions.set(sessionId, session);
+    logger.info({ sessionId, language: session.language }, 'Audio session initialized');
     return session;
   }
 
-  async handleAudio(callId: string, base64Chunk: string) {
-    const session = this.sessions.get(callId);
+  async handleAudioFrame(sessionId: string, audioBuffer: Buffer) {
+    const session = this.sessions.get(sessionId);
     if (!session || !session.active) {
-      throw new Error(`Session not found for callId=${callId}`);
+      throw new Error(`Session not found for sessionId=${sessionId}`);
     }
+
+    // TODO: Twilio streams are 8kHz mu-law/PCMU. Transcode to your STT expected format if needed.
+    const base64Chunk = audioBuffer.toString('base64');
 
     session.queue = session.queue
       .then(async () => {
-        const stt = await this.sttClient.transcribeChunk(base64Chunk, callId);
+        const stt = await this.sttClient.transcribeChunk(base64Chunk, sessionId);
         if (!stt) return;
 
         session.history.push({ role: 'caller', text: stt.text });
         this.callbacks.onTranscript({
-          callId,
+          callId: sessionId,
           role: 'caller',
           text: stt.text,
         });
@@ -73,33 +73,34 @@ export class AudioPipeline {
         const reply = await this.llmClient.generateReply(session.history);
         session.history.push({ role: 'assistant', text: reply });
         this.callbacks.onTranscript({
-          callId,
+          callId: sessionId,
           role: 'assistant',
           text: reply,
         });
 
         const audioOut = await this.ttsClient.synthesize(reply, session.language);
-        this.callbacks.onAudioOut({ callId, chunk: audioOut });
+        // TODO: ensure audioOut encoding matches Twilio requirements (e.g., base64 PCMU)
+        this.callbacks.onAudioOut({ callId: sessionId, chunk: audioOut });
       })
       .catch((err) => {
-        logger.error({ err, callId }, 'Pipeline error');
-        this.callbacks.onError?.(err, callId);
+        logger.error({ err, sessionId }, 'Pipeline error');
+        this.callbacks.onError?.(err, sessionId);
       });
 
     return session.queue;
   }
 
-  async cleanup(callId: string) {
-    const session = this.sessions.get(callId);
+  async endSession(sessionId: string) {
+    const session = this.sessions.get(sessionId);
     if (!session) return;
     session.active = false;
     await session.queue.catch(() => undefined);
-    this.sessions.delete(callId);
-    logger.info({ callId }, 'Audio session cleaned up');
+    this.sessions.delete(sessionId);
+    logger.info({ sessionId }, 'Audio session cleaned up');
   }
 
   async shutdown() {
-    const pending = [...this.sessions.keys()].map((callId) => this.cleanup(callId));
+    const pending = [...this.sessions.keys()].map((id) => this.endSession(id));
     await Promise.all(pending);
     await Promise.all([this.sttClient.close(), this.llmClient.close(), this.ttsClient.close()]);
   }

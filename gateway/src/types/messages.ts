@@ -36,3 +36,46 @@ export type OutgoingMessage =
   | TranscriptMessage
   | ErrorMessage
   | { type: 'ready'; callId: string };
+
+// Twilio Media Stream events
+export type TwilioStreamStartEvent = {
+  event: 'start';
+  start: {
+    streamSid: string;
+    callSid: string;
+    accountSid: string;
+  };
+};
+
+export type TwilioStreamMediaEvent = {
+  event: 'media';
+  media: {
+    streamSid: string;
+    payload: string; // base64-encoded audio frame (Twilio I-law 8kHz)
+  };
+};
+
+export type TwilioStreamStopEvent = {
+  event: 'stop';
+  stop: {
+    streamSid: string;
+  };
+};
+
+export type TwilioStreamEventUnion =
+  | TwilioStreamStartEvent
+  | TwilioStreamMediaEvent
+  | TwilioStreamStopEvent;
+
+export type GatewaySession = {
+  streamSid: string;
+  callSid?: string;
+  createdAt: number;
+  lastActivityAt: number;
+  languageHint?: string;
+};
+
+export type GatewayOutboundMessage =
+  | TranscriptMessage
+  | AudioOutMessage
+  | ErrorMessage;

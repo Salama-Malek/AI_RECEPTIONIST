@@ -21,12 +21,22 @@ npm start        # run compiled server
 
 The WebSocket server listens on `GATEWAY_PORT` (default 4000).
 
+## Twilio Media Streams
+- Twilio sends JSON frames over WebSocket:
+  - `{"event":"start","start":{"streamSid":"<sid>","callSid":"<sid>","accountSid":"<sid>"}}`
+  - `{"event":"media","media":{"streamSid":"<sid>","payload":"<base64-ilaw>"}}`
+  - `{"event":"stop","stop":{"streamSid":"<sid>"}}`
+- The gateway maps each `streamSid` to a session, feeds audio into the STT→LLM→TTS pipeline, and can send audio back via:
+  - `{"event":"media","media":{"payload":"<base64-ilaw>"}}` (ensure proper PCMU/8kHz encoding).
+- Audio from Twilio is 8kHz mono mu-law (PCMU). Transcoding may be required for your STT/TTS provider (TODO markers in code).
+
 ## Environment
 - `GATEWAY_PORT` — WebSocket server port.
 - `OPENAI_API_KEY` — API key for LLM provider (not required for mock flow).
 - `STT_MODEL` — STT model name.
 - `TTS_VOICE` — TTS voice to synthesize responses.
 - `LOG_LEVEL` — `trace|debug|info|warn|error|fatal`.
+- `TWILIO_EXPECTED_ORIGIN` — optional origin check for Twilio WebSocket connections.
 
 ## WebSocket Protocol
 Messages are JSON:
@@ -41,7 +51,8 @@ Messages are JSON:
 
 ## Architecture
 - `src/index.ts` boots the WebSocket server.
-- `src/server/wsServer.ts` manages connections, sessions, message parsing, and cleanup.
+- `src/server/wsServer.ts` manages Twilio Media Stream connections, session lifecycle, message parsing, and cleanup.
+- `src/server/sessionManager.ts` holds in-memory sessions keyed by `streamSid`.
 - `src/services/audioPipeline.ts` orchestrates STT → LLM → TTS per call with ordered processing.
 - `src/services/sttClient.ts` / `llmClient.ts` / `ttsClient.ts` wrap provider calls (currently mocked for offline use).
 - `src/config/env.ts` loads and validates environment variables.
