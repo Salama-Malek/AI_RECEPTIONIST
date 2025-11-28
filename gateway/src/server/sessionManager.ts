@@ -3,15 +3,21 @@ import { GatewaySession } from '../types/messages';
 export class SessionManager {
   private sessions = new Map<string, GatewaySession>();
 
-  getOrCreateSession(streamSid: string, data?: { callSid?: string; languageHint?: string }) {
+  getOrCreateSession(
+    streamSid: string,
+    data?: { callSid?: string; languageHint?: string; conversationId?: string },
+  ) {
     const existing = this.sessions.get(streamSid);
     if (existing) {
       existing.lastActivityAt = Date.now();
+      if (data?.conversationId) existing.conversationId = data.conversationId;
+      if (data?.languageHint) existing.languageHint = data.languageHint;
       return existing;
     }
     const session: GatewaySession = {
       streamSid,
       callSid: data?.callSid,
+      conversationId: data?.conversationId,
       languageHint: data?.languageHint,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
