@@ -37,6 +37,9 @@ The WebSocket server listens on `GATEWAY_PORT` (default 4000).
 - `TTS_VOICE` — TTS voice to synthesize responses.
 - `LOG_LEVEL` — `trace|debug|info|warn|error|fatal`.
 - `TWILIO_EXPECTED_ORIGIN` — optional origin check for Twilio WebSocket connections.
+- `BACKEND_API_BASE_URL` — URL of the NestJS backend (conversation API).
+- `BACKEND_API_TIMEOUT_MS` — timeout in ms for backend calls (default 5000).
+- `AI_CONVERSATION_ENABLED` — set to `false` to skip backend calls and only log transcripts.
 
 ## WebSocket Protocol
 Messages are JSON:
@@ -58,6 +61,12 @@ Messages are JSON:
 - `src/config/env.ts` loads and validates environment variables.
 - `src/utils/logger.ts` pino-based logger.
 - `src/types/messages.ts` defines the WS message schema.
+
+## Backend conversation integration
+- Flow: Twilio audio → gateway (STT) → backend `/conversation/start|message` → reply text → TTS → Twilio media stream.
+- Configure `BACKEND_API_BASE_URL` and `BACKEND_API_TIMEOUT_MS` for the NestJS backend.
+- Toggle with `AI_CONVERSATION_ENABLED=false` to disable backend calls.
+- Each Twilio `streamSid` maps to a gateway session; the first caller utterance starts a conversation, subsequent utterances send messages, and replies are synthesized to audio and returned to Twilio.
 
 ## Notes
 - The current clients provide mock behavior (no external network calls) to keep the service runnable locally. Replace implementations with real provider streaming logic as needed.
