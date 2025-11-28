@@ -10,6 +10,9 @@ const schema = z.object({
   TTS_VOICE: z.string().default('alloy'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   TWILIO_EXPECTED_ORIGIN: z.string().optional(),
+  BACKEND_API_BASE_URL: z.string().default('http://localhost:3000'),
+  BACKEND_API_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  AI_CONVERSATION_ENABLED: z.string().default('true'),
 });
 
 const parsed = schema.safeParse(process.env);

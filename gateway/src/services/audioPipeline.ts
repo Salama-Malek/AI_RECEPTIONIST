@@ -2,13 +2,18 @@ import { STTClient } from './sttClient';
 import { LLMClient, ConversationTurn } from './llmClient';
 import { TTSClient } from './ttsClient';
 import { logger } from '../utils/logger';
+import { backendClient } from './backendClient';
+import { config } from '../config/env';
 
 type Session = {
   id: string;
+  callSid?: string;
   language: string;
   history: ConversationTurn[];
   queue: Promise<void>;
   active: boolean;
+  conversationId?: string;
+  hasSentFallback?: boolean;
 };
 
 export interface PipelineCallbacks {
@@ -34,11 +39,12 @@ export class AudioPipeline {
     this.ttsClient = deps?.ttsClient ?? new TTSClient();
   }
 
-  async createSession(sessionId: string, options?: { languageHint?: string }) {
+  async createSession(sessionId: string, options?: { languageHint?: string; callSid?: string }) {
     const existing = this.sessions.get(sessionId);
     if (existing) return existing;
     const session: Session = {
       id: sessionId,
+      callSid: options?.callSid,
       language: options?.languageHint || 'auto',
       history: [],
       queue: Promise.resolve(),
@@ -63,24 +69,23 @@ export class AudioPipeline {
         const stt = await this.sttClient.transcribeChunk(base64Chunk, sessionId);
         if (!stt) return;
 
-        session.history.push({ role: 'caller', text: stt.text });
+        const text = stt.text;
+        session.history.push({ role: 'caller', text });
         this.callbacks.onTranscript({
           callId: sessionId,
           role: 'caller',
-          text: stt.text,
+          text,
         });
 
-        const reply = await this.llmClient.generateReply(session.history);
-        session.history.push({ role: 'assistant', text: reply });
-        this.callbacks.onTranscript({
-          callId: sessionId,
-          role: 'assistant',
-          text: reply,
-        });
+        if (config.AI_CONVERSATION_ENABLED !== 'true') {
+          return;
+        }
 
-        const audioOut = await this.ttsClient.synthesize(reply, session.language);
-        // TODO: ensure audioOut encoding matches Twilio requirements (e.g., base64 PCMU)
-        this.callbacks.onAudioOut({ callId: sessionId, chunk: audioOut });
+        if (!session.conversationId) {
+          await this.startBackendConversation(session, text);
+        } else {
+          await this.sendMessageToBackend(session, text);
+        }
       })
       .catch((err) => {
         logger.error({ err, sessionId }, 'Pipeline error');
@@ -103,5 +108,61 @@ export class AudioPipeline {
     const pending = [...this.sessions.keys()].map((id) => this.endSession(id));
     await Promise.all(pending);
     await Promise.all([this.sttClient.close(), this.llmClient.close(), this.ttsClient.close()]);
+  }
+
+  private async startBackendConversation(session: Session, firstUtterance: string) {
+    try {
+      const res = await backendClient.startConversation({
+        callerName: 'Unknown caller',
+        phoneNumber: session.callSid || 'unknown',
+        languageHint: session.language as any,
+        context: `callSid=${session.callSid || 'n/a'}; firstUtterance=${firstUtterance}`,
+      });
+      session.conversationId = res.conversationId;
+      const replyText = res.initialAssistantMessage;
+      session.history.push({ role: 'assistant', text: replyText });
+      this.callbacks.onTranscript({
+        callId: session.id,
+        role: 'assistant',
+        text: replyText,
+      });
+      const audioOut = await this.ttsClient.synthesize(replyText, session.language);
+      this.callbacks.onAudioOut({ callId: session.id, chunk: audioOut });
+      logger.info({ conversationId: res.conversationId }, 'Backend conversation started');
+    } catch (error) {
+      if (session.hasSentFallback) return;
+      session.hasSentFallback = true;
+      logger.error({ err: error }, 'Failed to start backend conversation; sending fallback');
+      const fallback = 'Sorry, our receptionist is unavailable right now.';
+      const audioOut = await this.ttsClient.synthesize(fallback, session.language);
+      this.callbacks.onAudioOut({ callId: session.id, chunk: audioOut });
+    }
+  }
+
+  private async sendMessageToBackend(session: Session, text: string) {
+    if (!session.conversationId) return;
+    try {
+      const res = await backendClient.sendMessage({
+        conversationId: session.conversationId,
+        from: 'caller',
+        text,
+      });
+      const replyText = res.reply;
+      session.history.push({ role: 'assistant', text: replyText });
+      this.callbacks.onTranscript({
+        callId: session.id,
+        role: 'assistant',
+        text: replyText,
+      });
+      const audioOut = await this.ttsClient.synthesize(replyText, session.language);
+      this.callbacks.onAudioOut({ callId: session.id, chunk: audioOut });
+    } catch (error) {
+      if (session.hasSentFallback) return;
+      session.hasSentFallback = true;
+      logger.error({ err: error }, 'Failed to send message to backend; sending fallback');
+      const fallback = 'Apologies, I could not process that. Please try again later.';
+      const audioOut = await this.ttsClient.synthesize(fallback, session.language);
+      this.callbacks.onAudioOut({ callId: session.id, chunk: audioOut });
+    }
   }
 }

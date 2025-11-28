@@ -70,6 +70,7 @@ export type TwilioStreamEventUnion =
 export type GatewaySession = {
   streamSid: string;
   callSid?: string;
+  conversationId?: string;
   createdAt: number;
   lastActivityAt: number;
   languageHint?: string;
