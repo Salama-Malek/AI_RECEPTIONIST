@@ -2,34 +2,30 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
 import {
-  IncomingMessage,
-  InitMessage,
-  AudioInMessage,
-  OutgoingMessage,
+  TwilioStreamEventUnion,
+  TwilioStreamStartEvent,
+  TwilioStreamMediaEvent,
+  TwilioStreamStopEvent,
 } from '../types/messages';
 import { AudioPipeline } from '../services/audioPipeline';
-
-type ClientState = {
-  callIds: Set<string>;
-};
+import { SessionManager } from './sessionManager';
 
 export class WsServer {
   private wss: WebSocketServer | null = null;
-  private clients = new Map<WebSocket, ClientState>();
+  private sessionManager = new SessionManager();
 
   private pipeline = new AudioPipeline({
-    onTranscript: (data) => this.broadcast(data.callId, { type: 'transcript', ...data }),
-    onAudioOut: (data) => this.broadcast(data.callId, { type: 'audio_out', ...data }),
-    onError: (error, callId) => this.broadcast(callId || 'unknown', { type: 'error', message: error.message }),
+    onTranscript: (data) =>
+      logger.debug({ callId: data.callId, role: data.role }, `Transcript: ${data.text}`),
+    onAudioOut: (data) => this.sendAssistantAudio(data.callId, data.chunk),
+    onError: (error, callId) => logger.error({ err: error, callId }, 'Pipeline error'),
   });
 
   start() {
     this.wss = new WebSocketServer({ port: config.GATEWAY_PORT });
 
     this.wss.on('connection', (ws) => {
-      this.clients.set(ws, { callIds: new Set() });
-      logger.info('WebSocket client connected');
-
+      logger.info('Twilio Media Stream connected');
       ws.on('message', (data) => this.handleMessage(ws, data.toString()));
       ws.on('close', () => this.handleClose(ws));
       ws.on('error', (err) => {
@@ -43,93 +39,86 @@ export class WsServer {
     });
   }
 
-  private async handleMessage(ws: WebSocket, data: string) {
-    let message: IncomingMessage;
+  private async handleMessage(ws: WebSocket, raw: string) {
+    let payload: TwilioStreamEventUnion;
     try {
-      message = JSON.parse(data);
+      payload = JSON.parse(raw);
     } catch (error) {
-      logger.warn({ data }, 'Received non-JSON message');
-      return this.send(ws, { type: 'error', message: 'Invalid JSON payload' });
+      logger.warn({ raw }, 'Failed to parse JSON from Twilio');
+      return;
     }
 
-    if (!this.isIncomingMessage(message)) {
-      return this.send(ws, { type: 'error', message: 'Unsupported message format' });
+    if (!payload || typeof (payload as any).event !== 'string') {
+      logger.warn({ payload }, 'Invalid payload: missing event');
+      return;
     }
 
-    switch (message.type) {
-      case 'init':
-        return this.handleInit(ws, message);
-      case 'audio':
-        return this.handleAudio(ws, message);
+    switch (payload.event) {
+      case 'start':
+        return this.handleStart(ws, payload as TwilioStreamStartEvent);
+      case 'media':
+        return this.handleMedia(ws, payload as TwilioStreamMediaEvent);
+      case 'stop':
+        return this.handleStop(ws, payload as TwilioStreamStopEvent);
       default:
-        return this.send(ws, { type: 'error', message: 'Unknown message type' });
+        logger.warn({ event: (payload as any).event }, 'Unknown Twilio event');
     }
   }
 
-  private async handleInit(ws: WebSocket, message: InitMessage) {
-    const state = this.clients.get(ws);
-    if (!state) return;
-    await this.pipeline.initSession(message.callId, message.languageHint || 'auto');
-    state.callIds.add(message.callId);
-    this.send(ws, { type: 'ready', callId: message.callId });
+  private async handleStart(ws: WebSocket, event: TwilioStreamStartEvent) {
+    const streamSid = event.start.streamSid;
+    const callSid = event.start.callSid;
+    this.sessionManager.getOrCreateSession(streamSid, { callSid });
+    await this.pipeline.createSession(streamSid);
+    (ws as any)._streamSid = streamSid;
+    logger.info({ streamSid, callSid }, 'Twilio stream started');
   }
 
-  private async handleAudio(ws: WebSocket, message: AudioInMessage) {
-    const state = this.clients.get(ws);
-    if (!state || !state.callIds.has(message.callId)) {
-      logger.warn({ callId: message.callId }, 'Audio received for unknown session');
-      return this.send(ws, {
-        type: 'error',
-        callId: message.callId,
-        message: 'Session not initialized. Send init first.',
-      });
+  private async handleMedia(_ws: WebSocket, event: TwilioStreamMediaEvent) {
+    const streamSid = event.media.streamSid;
+    const session = this.sessionManager.getSession(streamSid);
+    if (!session) {
+      logger.warn({ streamSid }, 'Media received for unknown session');
+      return;
     }
+    const buffer = Buffer.from(event.media.payload, 'base64');
+    await this.pipeline.handleAudioFrame(streamSid, buffer);
+    session.lastActivityAt = Date.now();
+  }
 
+  private async handleStop(ws: WebSocket, event: TwilioStreamStopEvent) {
+    const streamSid = event.stop.streamSid;
+    await this.pipeline.endSession(streamSid);
+    this.sessionManager.removeSession(streamSid);
+    logger.info({ streamSid }, 'Twilio stream stopped');
     try {
-      await this.pipeline.handleAudio(message.callId, message.chunk);
+      ws.close();
     } catch (error) {
-      logger.error({ err: error, callId: message.callId }, 'Pipeline error');
-      this.send(ws, {
-        type: 'error',
-        callId: message.callId,
-        message: (error as Error).message,
-      });
+      logger.warn({ err: error }, 'Error closing WebSocket on stop');
     }
   }
 
-  private async handleClose(ws: WebSocket) {
-    const state = this.clients.get(ws);
-    if (!state) return;
+  private sendAssistantAudio(streamSid: string, base64Pcm: string) {
+    // Twilio expects base64 PCMU/8kHz frames in an outbound "media" event.
+    const msg = JSON.stringify({
+      event: 'media',
+      media: { payload: base64Pcm }, // TODO: ensure encoding matches Twilio expectations (PCMU 8kHz).
+    });
+    if (!this.wss) return;
 
-    for (const callId of state.callIds) {
-      await this.pipeline.cleanup(callId);
-    }
-    this.clients.delete(ws);
-    logger.info('WebSocket client disconnected and sessions cleaned up');
-  }
-
-  private send(ws: WebSocket, message: OutgoingMessage) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(message));
-    }
-  }
-
-  private broadcast(callId: string, message: OutgoingMessage) {
-    for (const [ws, state] of this.clients.entries()) {
-      if (state.callIds.has(callId) && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(message));
+    this.wss.clients.forEach((client: WebSocket & { _streamSid?: string }) => {
+      if (client.readyState === WebSocket.OPEN && client._streamSid === streamSid) {
+        client.send(msg);
       }
-    }
+    });
   }
 
-  private isIncomingMessage(msg: any): msg is IncomingMessage {
-    if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return false;
-    if (msg.type === 'init') {
-      return typeof msg.callId === 'string';
+  private async handleClose(ws: WebSocket & { _streamSid?: string }) {
+    const streamSid = ws._streamSid;
+    if (streamSid) {
+      await this.pipeline.endSession(streamSid);
+      this.sessionManager.removeSession(streamSid);
+      logger.info({ streamSid }, 'Session cleaned up on socket close');
     }
-    if (msg.type === 'audio') {
-      return typeof msg.callId === 'string' && typeof msg.chunk === 'string';
-    }
-    return false;
   }
 }
