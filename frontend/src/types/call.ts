@@ -20,3 +20,20 @@ export type Call = {
   summary: string;
   transcript: TranscriptEntry[];
 };
+
+export type CallSummary = {
+  id: string;
+  callSid?: string;
+  fromNumber: string;
+  callerName?: string;
+  startedAt: string;
+  durationSeconds?: number;
+  status: 'open' | 'handled' | 'spam';
+  urgency: 'low' | 'medium' | 'high';
+};
+
+export type CallDetails = CallSummary & {
+  transcript: TranscriptEntry[];
+  summary?: string;
+  notes?: string;
+};

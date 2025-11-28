@@ -1,40 +1,9 @@
 import { apiClient } from './client';
-import { Call, CallStatus } from '../types/call';
+import { CallDetails, CallSummary } from '../types/call';
 
-const mockCalls: Call[] = [
-  {
-    id: 'call_1',
-    callerName: 'Amira Hassan',
-    fromNumber: '+971501234567',
-    toNumber: '+18005550123',
-    startedAt: new Date().toISOString(),
-    status: 'completed',
-    urgency: 'normal',
-    summary: 'Patient requested appointment for next week.',
-    transcript: [
-      { id: 't1', role: 'caller', text: 'Hello, I need to book an appointment.', timestamp: new Date().toISOString() },
-      { id: 't2', role: 'assistant', text: 'Sure, which day works for you?', timestamp: new Date().toISOString() },
-    ],
-  },
-  {
-    id: 'call_2',
-    callerName: 'Unknown',
-    fromNumber: '+12065550111',
-    toNumber: '+18005550123',
-    startedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    status: 'in_progress',
-    urgency: 'high',
-    summary: 'Caller is upset about billing error.',
-    transcript: [
-      { id: 't3', role: 'caller', text: 'I was overcharged.', timestamp: new Date().toISOString() },
-      { id: 't4', role: 'assistant', text: 'Let me check your account.', timestamp: new Date().toISOString() },
-    ],
-  },
-];
-
-export async function getCalls(): Promise<Call[]> {
+export async function fetchCalls(): Promise<CallSummary[]> {
   try {
-    const { data } = await apiClient.get<Call[]>('/calls');
+    const { data } = await apiClient.get<CallSummary[]>('/calls');
     return data;
   } catch (error) {
     console.warn('Falling back to mock calls', error);
@@ -42,22 +11,52 @@ export async function getCalls(): Promise<Call[]> {
   }
 }
 
-export async function getCallById(id: string): Promise<Call> {
+export async function fetchCallById(callId: string): Promise<CallDetails> {
   try {
-    const { data } = await apiClient.get<Call>(`/calls/${id}`);
+    const { data } = await apiClient.get<CallDetails>(`/calls/${callId}`);
     return data;
   } catch (error) {
-    const fallback = mockCalls.find((c) => c.id === id) || mockCalls[0];
-    return fallback;
+    console.warn('Falling back to mock call detail', error);
+    const fallback = mockCalls.find((c) => c.id === callId) || mockCalls[0];
+    return { ...fallback, transcript: mockTranscript, summary: fallback.summary };
   }
 }
 
-export async function updateCallStatus(id: string, status: CallStatus): Promise<Call> {
+export async function updateCallStatus(
+  callId: string,
+  status: 'handled' | 'spam' | 'open',
+): Promise<void> {
   try {
-    const { data } = await apiClient.patch<Call>(`/calls/${id}/status`, { status });
-    return data;
+    await apiClient.patch(`/calls/${callId}/status`, { status });
   } catch (error) {
-    const existing = await getCallById(id);
-    return { ...existing, status };
+    console.warn('Mocking call status update', error);
   }
 }
+
+const mockCalls: CallSummary[] = [
+  {
+    id: 'call_1',
+    callSid: 'CA123',
+    fromNumber: '+971501234567',
+    callerName: 'Amira Hassan',
+    startedAt: new Date().toISOString(),
+    durationSeconds: 180,
+    status: 'handled',
+    urgency: 'medium',
+  },
+  {
+    id: 'call_2',
+    callSid: 'CA456',
+    fromNumber: '+12065550111',
+    callerName: 'Unknown',
+    startedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    durationSeconds: 45,
+    status: 'open',
+    urgency: 'high',
+  },
+];
+
+const mockTranscript = [
+  { id: 't1', role: 'caller', text: 'Hello, I need to book an appointment.', timestamp: new Date().toISOString() },
+  { id: 't2', role: 'assistant', text: 'Sure, what day works best for you?', timestamp: new Date().toISOString() },
+];
