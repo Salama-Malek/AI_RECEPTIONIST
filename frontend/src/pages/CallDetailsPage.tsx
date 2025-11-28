@@ -3,33 +3,47 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
-import { Call } from '../types/call';
-import { getCallById, updateCallStatus } from '../api/calls';
+import { CallDetails } from '../types/call';
+import { fetchCallById, updateCallStatus } from '../api/calls';
 
 export default function CallDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [call, setCall] = useState<Call | null>(null);
+  const [call, setCall] = useState<CallDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     (async () => {
-      const data = await getCallById(id);
-      setCall(data);
+      try {
+        setLoading(true);
+        const data = await fetchCallById(id);
+        setCall(data);
+        setError(null);
+      } catch (err) {
+        setError('Call not found');
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [id]);
 
-  const updateStatus = async (status: Call['status']) => {
+  const updateStatus = async (status: CallDetails['status']) => {
     if (!id) return;
     setUpdating(true);
-    const updated = await updateCallStatus(id, status);
-    setCall(updated);
+    await updateCallStatus(id, status as any);
+    setCall((prev) => (prev ? { ...prev, status } : prev));
     setUpdating(false);
   };
 
-  if (!call) {
+  if (loading) {
     return <div className="text-slate-300">Loading call...</div>;
+  }
+
+  if (error || !call) {
+    return <div className="text-red-300">Call not found.</div>;
   }
 
   return (
@@ -43,7 +57,7 @@ export default function CallDetailsPage() {
           <Button variant="secondary" onClick={() => navigate('/calls')}>
             Back to list
           </Button>
-          <Button variant="primary" onClick={() => updateStatus('completed')} disabled={updating}>
+          <Button variant="primary" onClick={() => updateStatus('handled')} disabled={updating}>
             Mark as handled
           </Button>
           <Button variant="danger" onClick={() => updateStatus('spam')} disabled={updating}>
@@ -57,7 +71,6 @@ export default function CallDetailsPage() {
           <div className="grid grid-cols-2 gap-3 text-sm text-slate-200">
             <Metadata label="Caller" value={call.callerName || 'Unknown'} />
             <Metadata label="Number" value={call.fromNumber} />
-            <Metadata label="Dialed" value={call.toNumber} />
             <Metadata
               label="Status"
               value={<Badge variant="info">{call.status}</Badge>}
