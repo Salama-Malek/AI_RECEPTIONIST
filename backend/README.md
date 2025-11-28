@@ -43,8 +43,30 @@ npm start
 - **conversation**: AI receptionist brain (text-only endpoint for debugging the call flow).
 
 ## Webhook Endpoints (default port 3000)
-- `POST /telephony/twilio/webhook` - Twilio voice webhook (expects JSON).
-- `POST /telephony/telnyx/webhook` - Telnyx voice webhook (expects JSON).
+- `POST /telephony/incoming` - Twilio Voice webhook (form-encoded). Returns TwiML that starts a media stream to the gateway.
+- `POST /telephony/status` - Twilio status callbacks (form-encoded).
+- `POST /telephony/twilio/webhook` - Twilio media events (JSON).
+- `POST /telephony/telnyx/webhook` - Telnyx voice webhook (JSON).
+
+Example TwiML returned by `/telephony/incoming`:
+```xml
+<Response>
+  <Say>Connecting you to Salama's AI assistant. Please hold.</Say>
+  <Connect>
+    <Stream url="wss://gateway.example.com/stream">
+      <Parameter name="callId" value="abc123" />
+      <Parameter name="callSid" value="CAxxxx" />
+    </Stream>
+  </Connect>
+</Response>
+```
+
+Example curl (mimic Twilio form POST):
+```bash
+curl -X POST http://localhost:3000/telephony/incoming \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "From=%2B15551234567&To=%2B18005550123&CallSid=CA123"
+```
 
 ## Conversation API (text-mode debugging)
 These endpoints let the gateway or frontend exercise the AI receptionist without audio.
