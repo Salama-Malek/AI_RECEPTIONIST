@@ -69,7 +69,7 @@ export class WsServer {
     const streamSid = event.start.streamSid;
     const callSid = event.start.callSid;
     this.sessionManager.getOrCreateSession(streamSid, { callSid });
-    await this.pipeline.createSession(streamSid);
+    await this.pipeline.createSession(streamSid, { callSid });
     (ws as any)._streamSid = streamSid;
     logger.info({ streamSid, callSid }, 'Twilio stream started');
   }
