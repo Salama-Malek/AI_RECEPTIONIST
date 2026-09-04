@@ -131,3 +131,7 @@ API documentation: [`backend/README.md`](backend/README.md),
 Working backend, gateway, and dashboard. Not a hosted product — telephony provider
 credentials (Twilio/Telnyx) and STT/LLM/TTS provider integrations are yours to supply;
 the gateway's provider clients are currently mocked for offline development.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
